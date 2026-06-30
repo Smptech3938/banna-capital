@@ -14,13 +14,15 @@ export type InvestmentStatus =
   | "completed"
   | "rejected";
 
+export type UserRole = "investor" | "admin" | "owner";
+
 /* ── Database Row Types ────────────────────────────────────────────── */
 
 export interface Profile {
   id: string;
   name: string;
   phone: string | null;
-  role: "investor" | "admin";
+  role: UserRole;
   created_at: string;
 }
 

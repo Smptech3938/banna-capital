@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Shield, User as UserIcon, RefreshCw } from 'lucide-react';
+import { Loader2, Shield, User as UserIcon, RefreshCw, Key } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase';
 import { Profile } from '@/lib/types';
+import { canManageAdmins } from '@/lib/permissions';
 import toast from 'react-hot-toast';
 
 /**
@@ -11,18 +12,31 @@ import toast from 'react-hot-toast';
  *
  * Auth guard is handled by admin/layout.tsx (server-side).
  * Sidebar is rendered by admin/layout.tsx via AdminSidebar.
+ * Only Owners can toggle roles (investor <-> admin). Owners cannot be modified.
  */
 export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [users, setUsers] = useState<Profile[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     try {
       const supabase = createSupabaseBrowser();
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setCurrentUserId(user.id);
+      if (user) {
+        setCurrentUserId(user.id);
+        // Fetch current user role
+        const { data: currentProfile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        if (currentProfile) {
+          setCurrentUserRole(currentProfile.role);
+        }
+      }
 
       const { data: profiles, error } = await supabase
         .from('profiles')
@@ -44,6 +58,16 @@ export default function AdminUsersPage() {
   }, []);
 
   const toggleRole = async (targetUser: Profile) => {
+    if (!canManageAdmins(currentUserRole)) {
+      toast.error("Only platform owners can promote or demote roles.");
+      return;
+    }
+
+    if (targetUser.role === 'owner') {
+      toast.error("Platform owners cannot be demoted.");
+      return;
+    }
+
     const newRole = targetUser.role === 'admin' ? 'investor' : 'admin';
 
     if (targetUser.id === currentUserId) {
@@ -67,7 +91,7 @@ export default function AdminUsersPage() {
 
       // Update local state optimistically
       setUsers(prev =>
-        prev.map(u => u.id === targetUser.id ? { ...u, role: newRole as "investor" | "admin" } : u)
+        prev.map(u => u.id === targetUser.id ? { ...u, role: newRole } : u)
       );
 
       // If admin demoted themselves, redirect will happen via layout on next nav
@@ -93,6 +117,8 @@ export default function AdminUsersPage() {
     );
   }
 
+  const isAllowedToManage = canManageAdmins(currentUserRole);
+
   return (
     <div className="space-y-6 max-w-7xl w-full mx-auto">
       {/* Page heading */}
@@ -100,7 +126,7 @@ export default function AdminUsersPage() {
         <div>
           <h2 className="text-xl font-semibold text-white">User Management</h2>
           <p className="mt-1 text-sm text-zinc-400">
-            View all registered users and manage their roles.
+            View all registered users and manage roles (restricted to owners).
           </p>
         </div>
         <button
@@ -132,48 +158,79 @@ export default function AdminUsersPage() {
                   </td>
                 </tr>
               )}
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-white/[0.02] transition-colors">
-                  <td className="px-6 py-4 font-medium text-white flex items-center gap-3">
-                    <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
-                      user.role === 'admin' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
-                    }`}>
-                      {user.role === 'admin' ? <Shield className="h-4 w-4" /> : <UserIcon className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <span className="block font-semibold text-white">{user.name}</span>
-                      <span className="block text-[10px] text-zinc-500">ID: {user.id.slice(0, 8)}...</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 font-mono text-zinc-300">
-                    {user.phone || '—'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${
-                      user.role === 'admin' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
-                    }`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => toggleRole(user)}
-                      disabled={updatingId !== null}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold border transition-all ${
-                        user.role === 'admin'
-                          ? 'border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20'
-                          : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                      }`}
-                    >
-                      {updatingId === user.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        `Make ${user.role === 'admin' ? 'Investor' : 'Admin'}`
-                      )}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {users.map((user) => {
+                const isTargetOwner = user.role === 'owner';
+                const disableToggle = updatingId !== null || !isAllowedToManage || isTargetOwner;
+
+                let tooltipText = undefined;
+                if (isTargetOwner) {
+                  tooltipText = "Platform owners cannot be managed from this panel.";
+                } else if (!isAllowedToManage) {
+                  tooltipText = "Only platform owners can promote or demote user roles.";
+                }
+
+                return (
+                  <tr key={user.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-6 py-4 font-medium text-white flex items-center gap-3">
+                      <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                        user.role === 'owner'
+                          ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
+                          : user.role === 'admin'
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'bg-zinc-800 text-zinc-400'
+                      }`}>
+                        {user.role === 'owner' ? (
+                          <Key className="h-4 w-4" />
+                        ) : user.role === 'admin' ? (
+                          <Shield className="h-4 w-4" />
+                        ) : (
+                          <UserIcon className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div>
+                        <span className="block font-semibold text-white">{user.name}</span>
+                        <span className="block text-[10px] text-zinc-500">ID: {user.id.slice(0, 8)}...</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-mono text-zinc-300">
+                      {user.phone || '—'}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-semibold">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium uppercase ${
+                        user.role === 'owner'
+                          ? 'bg-violet-500/10 text-violet-400'
+                          : user.role === 'admin'
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'bg-zinc-800 text-zinc-400'
+                      }`}>
+                        {user.role}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => toggleRole(user)}
+                        disabled={disableToggle}
+                        title={tooltipText}
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold border transition-all ${
+                          isTargetOwner
+                            ? 'border-violet-500/10 bg-violet-500/5 text-violet-400/50 cursor-not-allowed'
+                            : !isAllowedToManage
+                            ? 'border-white/5 bg-zinc-900 text-zinc-500 cursor-not-allowed'
+                            : user.role === 'admin'
+                            ? 'border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                            : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                        }`}
+                      >
+                        {updatingId === user.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          `Make ${user.role === 'admin' ? 'Investor' : 'Admin'}`
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

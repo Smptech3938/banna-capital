@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { canAccessAdmin } from "@/lib/permissions";
 import AdminSidebar from "./AdminSidebar";
 
 /**
@@ -35,7 +36,7 @@ export default async function AdminLayout({
     .eq("id", user.id)
     .single();
 
-  if (!profile || profile.role !== "admin") {
+  if (!profile || !canAccessAdmin(profile.role)) {
     redirect("/dashboard");
   }
 
@@ -64,8 +65,8 @@ export default async function AdminLayout({
           </h1>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-medium text-emerald-400 border border-emerald-500/20">
-              Admin
+            <span className="text-xs rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-medium text-emerald-400 border border-emerald-500/20 capitalize">
+              {profile.role}
             </span>
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium text-white">{profile.name}</p>
@@ -80,7 +81,6 @@ export default async function AdminLayout({
             </div>
           </div>
         </header>
-
         {/* Page content */}
         <div className="flex-1 p-6">{children}</div>
       </main>
