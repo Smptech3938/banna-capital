@@ -28,33 +28,37 @@ export default async function DashboardPage() {
   }
 
   // Fetch investment stats
-  let totalInvested = 0;
-  let expectedProfit = 0;
+  let myInvestmentsCount = 0;
   let activeCount = 0;
-  let pendingCount = 0;
+  let expectedReturns = 0;
+  let portfolioValue = 0;
 
   if (user) {
     const { data: investments } = await supabase
       .from("investments")
-      .select("amount, status, opportunities(roi)")
+      .select("amount, status, profit, opportunities(roi)")
       .eq("user_id", user.id);
 
     if (investments) {
+      myInvestmentsCount = investments.length;
       for (const inv of investments) {
         const amount = Number(inv.amount);
-        totalInvested += amount;
+        const status = inv.status;
+        const opp = inv.opportunities as unknown as { roi: number } | null;
+        const roi = opp ? Number(opp.roi) : 0;
+        const profit = (amount * roi) / 100;
 
-        if (inv.status === "active" || inv.status === "approved") {
+        if (status === "active" || status === "approved") {
           activeCount++;
-          // Calculate expected profit from ROI
-          const opp = inv.opportunities as unknown as { roi: number } | null;
-          if (opp) {
-            expectedProfit += (amount * Number(opp.roi)) / 100;
+          expectedReturns += profit;
+          portfolioValue += amount + profit;
+        } else if (status === "completed") {
+          portfolioValue += amount;
+          if (inv.profit !== null) {
+            portfolioValue += Number(inv.profit);
+          } else {
+            portfolioValue += profit;
           }
-        }
-
-        if (inv.status === "pending") {
-          pendingCount++;
         }
       }
     }
@@ -75,28 +79,28 @@ export default async function DashboardPage() {
       {/* Stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          icon={DollarSign}
-          label="Total Invested"
-          value={formatCurrency(totalInvested)}
-          accent="emerald"
-        />
-        <StatCard
-          icon={TrendingUp}
-          label="Expected Profit"
-          value={formatCurrency(expectedProfit)}
-          accent="sky"
-        />
-        <StatCard
           icon={Wallet}
-          label="Active Investments"
-          value={String(activeCount)}
+          label="My Investments"
+          value={String(myInvestmentsCount)}
           accent="violet"
         />
         <StatCard
           icon={Clock}
-          label="Pending Investments"
-          value={String(pendingCount)}
+          label="Active Investments"
+          value={String(activeCount)}
           accent="amber"
+        />
+        <StatCard
+          icon={TrendingUp}
+          label="Expected Returns"
+          value={formatCurrency(expectedReturns)}
+          accent="sky"
+        />
+        <StatCard
+          icon={DollarSign}
+          label="Portfolio Value"
+          value={formatCurrency(portfolioValue)}
+          accent="emerald"
         />
       </div>
 
