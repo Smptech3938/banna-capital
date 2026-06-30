@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { createSupabaseBrowser } from "@/lib/supabase";
-import { formatCurrency, formatROI } from "@/lib/format";
+import { formatCurrency, formatROI, formatDuration } from "@/lib/format";
 
 interface InvestFormProps {
   opportunityId: string;
@@ -28,17 +28,44 @@ export default function InvestForm({
   const [error, setError] = useState("");
 
   const numericAmount = Number(amount) || 0;
-  const expectedReturn = (numericAmount * roi) / 100;
-  const totalReturn = numericAmount + expectedReturn;
+  
+  // 1. Real-time Calculation Formulas
+  const expectedProfit = (numericAmount * roi) / 100;
+  const totalReturn = numericAmount + expectedProfit;
+
+  // 2. Real-time Input Validation
+  const handleAmountChange = (val: string) => {
+    setAmount(val);
+    
+    if (val.trim() === "") {
+      setError("");
+      return;
+    }
+
+    const num = Number(val);
+    if (isNaN(num)) {
+      setError("Please enter a valid numeric amount.");
+      return;
+    }
+
+    if (num < 0) {
+      setError("Investment amount cannot be negative.");
+      return;
+    }
+
+    if (num < minInvestment) {
+      setError(`Amount must be at least ${formatCurrency(minInvestment)}.`);
+      return;
+    }
+
+    setError("");
+  };
+
+  const isValid = amount.trim() !== "" && !error && numericAmount >= minInvestment;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-
-    if (numericAmount < minInvestment) {
-      setError(`Minimum investment is ${formatCurrency(minInvestment)}`);
-      return;
-    }
+    if (!isValid) return;
 
     setLoading(true);
 
@@ -95,13 +122,8 @@ export default function InvestForm({
           <input
             id="invest-amount"
             type="number"
-            min={minInvestment}
-            step={1000}
             value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value);
-              setError("");
-            }}
+            onChange={(e) => handleAmountChange(e.target.value)}
             placeholder={`Min. ${formatCurrency(minInvestment)}`}
             className="w-full rounded-lg border border-white/10 bg-zinc-800/50 py-2.5 pl-7 pr-4 text-sm text-white placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
           />
@@ -111,38 +133,46 @@ export default function InvestForm({
         )}
       </div>
 
-      {/* Investment summary */}
-      {numericAmount > 0 && (
-        <div className="rounded-lg border border-white/5 bg-zinc-800/30 p-4 space-y-2.5">
-          <h4 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-            Investment Summary
-          </h4>
-          <div className="flex justify-between text-sm">
-            <span className="text-zinc-400">Investment</span>
-            <span className="text-white font-medium">
-              {formatCurrency(numericAmount)}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-zinc-400">
-              Expected Return ({formatROI(roi)})
-            </span>
-            <span className="text-emerald-400 font-medium">
-              + {formatCurrency(expectedReturn)}
-            </span>
-          </div>
-          <div className="border-t border-white/5 pt-2 flex justify-between text-sm">
-            <span className="text-zinc-300 font-medium">Total Return</span>
-            <span className="text-white font-bold">
-              {formatCurrency(totalReturn)}
-            </span>
-          </div>
+      {/* Investment summary card - Always visible below the input */}
+      <div className="rounded-lg border border-white/5 bg-zinc-800/30 p-4 space-y-2.5">
+        <h4 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+          Investment Summary
+        </h4>
+        <div className="flex justify-between text-sm">
+          <span className="text-zinc-400">Investment Amount</span>
+          <span className="text-white font-medium">
+            {formatCurrency(numericAmount)}
+          </span>
         </div>
-      )}
+        <div className="flex justify-between text-sm">
+          <span className="text-zinc-400">ROI %</span>
+          <span className="text-emerald-400 font-medium">
+            {formatROI(roi)}
+          </span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-zinc-400">Expected Profit</span>
+          <span className="text-emerald-400 font-medium">
+            + {formatCurrency(expectedProfit)}
+          </span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-zinc-400">Duration</span>
+          <span className="text-white font-medium">
+            {formatDuration(durationMonths)}
+          </span>
+        </div>
+        <div className="border-t border-white/5 pt-2 flex justify-between text-sm">
+          <span className="text-zinc-300 font-medium">Total Return</span>
+          <span className="text-white font-bold">
+            {formatCurrency(totalReturn)}
+          </span>
+        </div>
+      </div>
 
       <button
         type="submit"
-        disabled={loading || numericAmount < minInvestment}
+        disabled={loading || !isValid}
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? (
