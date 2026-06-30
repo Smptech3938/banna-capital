@@ -50,10 +50,16 @@ export default function RegisterPage() {
     const supabase = createSupabaseBrowser();
 
     try {
-      // 1. Create auth user
+      // 1. Create auth user with metadata
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            name: name.trim(),
+            phone: phone.trim(),
+          },
+        },
       });
 
       if (error) {
@@ -63,30 +69,28 @@ export default function RegisterPage() {
 
       // 2. Check if email confirmation is required
       //    If session exists → auto-logged-in (email confirm OFF)
-      //    If no session → user must confirm email first
+      //    If no session → user must verify OTP first
       if (data.user) {
-        // 3. Insert profile row
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .insert({
-            id: data.user.id,
-            name: name.trim(),
-            phone: phone.trim(),
-          });
-
-        if (profileError) {
-          console.error("Profile insert error:", profileError);
-          // Don't block the user — auth account was created successfully
-        }
-
+        // Fallback: try client-side profile creation if auto-logged in
         if (data.session) {
-          // Email confirmation is OFF → user is logged in
+          const { error: profileError } = await supabase
+            .from("profiles")
+            .insert({
+              id: data.user.id,
+              name: name.trim(),
+              phone: phone.trim(),
+            });
+
+          if (profileError) {
+            console.error("Profile insert error:", profileError);
+          }
+
           toast.success("Account created! Redirecting…");
           router.push("/dashboard");
         } else {
-          // Email confirmation is ON → tell user to check email
-          toast.success("Check your email to confirm your account!");
-          router.push("/login");
+          // Email confirmation is ON → redirect to OTP verification page
+          toast.success("Verification code sent! Please check your email.");
+          router.push(`/verify?email=${encodeURIComponent(email)}`);
         }
       }
     } catch {

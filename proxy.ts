@@ -7,8 +7,9 @@ import { NextResponse, type NextRequest } from "next/server";
  * Protected routes — unauthenticated users get redirected to /login.
  * Auth routes     — authenticated users get redirected to /dashboard.
  */
-const PROTECTED_ROUTES = ["/dashboard", "/profile", "/investments", "/admin"];
-const AUTH_ROUTES = ["/login", "/register"];
+const PROTECTED_ROUTES = ["/dashboard", "/profile", "/investments", "/opportunities", "/transactions", "/admin"];
+const AUTH_ROUTES = ["/login", "/register", "/verify"];
+const ADMIN_ROUTES = ["/admin/**"];
 
 export async function proxy(request: NextRequest) {
   // 1. Create a response we can modify (pass cookies through)
@@ -61,7 +62,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return supabaseResponse;
+        return supabaseResponse;
 }
 
 /**
